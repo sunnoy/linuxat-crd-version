@@ -44,8 +44,8 @@ import (
 // AtReconciler reconciles a At object
 type AtReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log      logr.Logger
+	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 }
 
@@ -191,6 +191,7 @@ func timeUntilSchedule(schedule string) (time.Duration, error) {
 	return s.Sub(now), nil
 }
 
+//
 func (r *AtReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cnatv1alpha1.At{}).
@@ -199,4 +200,3 @@ func (r *AtReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Pod{}).
 		Complete(r)
 }
-

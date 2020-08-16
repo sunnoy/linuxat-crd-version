@@ -47,6 +47,8 @@ const (
 	PhaseDone    = "DONE"
 )
 
+// get资源的时候添加多个列
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".spec.schedule", name=Schedule, type=string

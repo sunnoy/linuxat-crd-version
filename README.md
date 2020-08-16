@@ -123,11 +123,10 @@ make install
 cd src/example && make run
 ```
 
-# 控制器
+# 控制器抽象机制
 
-## 获取对象
+控制器抽象机制.md
 
-## 更新状态
 
 
 
