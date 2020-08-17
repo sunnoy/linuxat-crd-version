@@ -99,13 +99,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 实例化 controllers.AtReconciler
-	//type AtReconciler struct {
-	//	client.Client
-	//	Log    logr.Logger
-	//	Scheme *runtime.Scheme
-	//	Recorder record.EventRecorder
-	//}
+	// Controllers
+	//
+	// Controllers (pkg/controller) use events (pkg/events) to eventually trigger
+	// reconcile requests.
+	// They may be constructed manually, but are often constructed with a Builder (pkg/builder),
+
+	// builder provides wraps other controller-runtime libraries and exposes simple
+	// patterns for building common Controllers.
+
+	//which eases the wiring of event sources (pkg/source), like Kubernetes API object changes, to event handlers
+	// (pkg/handler), like "enqueue a reconcile request for the object owner".
+
+	// Predicates (pkg/predicate) can be used to filter which events actually
+	// trigger reconciles.  There are pre-written utilities for the common cases, and
+	// interfaces and helpers for advanced cases.
+
+	//
 	if err = (&controllers.AtReconciler{
 		// 需要一个client对象
 		Client: mgr.GetClient(),
@@ -116,7 +126,7 @@ func main() {
 		// 事件记录注册
 		Recorder: mgr.GetEventRecorderFor("at-controller"),
 
-		// 使用 SetupWithManager 方法 ，传入初始化后的mgr
+		// 使用 SetupWithManager 方法 ，传入初始化后的mgr 返回一个error对象
 		// 将实例化的controller注册到manager，注册失败就退出程序
 		// todo 通过这个方法引出控制器
 	}).SetupWithManager(mgr); err != nil {

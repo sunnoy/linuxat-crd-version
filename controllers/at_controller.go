@@ -14,6 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//Controllers
+//
+//Controllers (pkg/controller) use events (pkg/events) to eventually trigger
+//reconcile requests.  They may be constructed manually, but are often
+//constructed with a Builder (pkg/builder), which eases the wiring of event
+//sources (pkg/source), like Kubernetes API object changes, to event handlers
+//(pkg/handler), like "enqueue a reconcile request for the object owner".
+//Predicates (pkg/predicate) can be used to filter which events actually
+//trigger reconciles.  There are pre-written utilities for the common cases, and
+//interfaces and helpers for advanced cases.
+
 package controllers
 
 import (
@@ -41,11 +52,42 @@ import (
 	cnatv1alpha1 "example/api/v1alpha1"
 )
 
+//Reconcilers
+//
+//
+//
+//Controller logic is implemented in terms of Reconcilers (pkg/reconcile).
+//A Reconciler implements a function which takes a reconcile Request containing
+//the name and namespace of the object to reconcile, reconciles the object,
+//and returns a Response or an error indicating whether to requeue for a
+//second round of processing.
+
 // AtReconciler reconciles a At object
 type AtReconciler struct {
+	//Clients and Caches
+	//
+	//Reconcilers use Clients (pkg/client) to access API objects.  The default
+	//client provided by the manager reads from a local shared cache (pkg/cache)
+	//and writes directly to the API server, but clients can be constructed that
+	//only talk to the API server, without a cache.  The Cache will auto-populate
+	//with watched objects, as well as when other structured objects are
+	//requested. The default split client does not promise to invalidate the cache
+	//during writes (nor does it promise sequential create/get coherence), and code
+	//should not assume a get immediately following a create/update will return
+	//the updated resource. Caches may also have indexes, which can be created via
+	//a FieldIndexer (pkg/client) obtained from the manager.  Indexes can used to
+	//quickly and easily look up all objects with certain fields set.  Reconcilers
+	//may retrieve event recorders (pkg/recorder) to emit events using the
+	//manager.
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
+	Log logr.Logger
+	//	Schemes
+	//
+	//	Clients, Caches, and many other things in Kubernetes use Schemes
+	//  (pkg/scheme) to associate Go types to Kubernetes API Kinds
+	//  (Group-Version-Kinds, to be specific).
+	Scheme *runtime.Scheme
+	// EventRecorder knows how to record events on behalf of an EventSource.
 	Recorder record.EventRecorder
 }
 
@@ -57,16 +99,43 @@ type AtReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 
+// Reconcilers 的Reconcile方法
+
+// Reconciler performs a full reconciliation for the object referred to by the Request.
+// The Controller will requeue the Request to be processed again if an error is non-nil or
+// Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
+
+// ctrl.Request
+// Request contains the information necessary to reconcile a Kubernetes object.  This includes the
+// information to uniquely identify the object - its Name and Namespace.
+
+// ctrl.Result == reconcile.Result
+// Result contains the result of a Reconciler invocation.
+//type Result struct {
+//	// Requeue tells the Controller to requeue the reconcile key.  Defaults to false.
+//	Requeue bool
+//
+//	// RequeueAfter if greater than 0, tells the Controller to requeue the reconcile key after the Duration.
+//	// Implies that Requeue is true, there is no need to set Requeue to true at the same time as RequeueAfter.
+//	RequeueAfter time.Duration
+//}
 func (r *AtReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	logger := r.Log.WithValues("namespace", req.NamespacedName, "at", req.Name)
 	logger.Info("== Reconciling At")
 
-	// 实例化一个空的资源对象
+	// 实例化一个空的资源对象，指针类型
 	instance := &cnatv1alpha1.At{}
 
 	// 通过 AtReconciler 的get方法通过k8s client 来获取相关的资源对象
 	// 在给定的namespace获取 cnatv1alpha1.At 对象
+	// 因为r是指针，获取完成就放到缓存了，不用期待返回值
+
+	// Get retrieves an obj for the given object key from the Kubernetes Cluster.
+	// obj must be a struct pointer so that obj can be updated with the response
+	// returned by the Server.
+
+	// 执行完成后，从apiserver获取cnatv1alpha1.At{} 就会填充相关的字段 因为他是指针类型
 	err := r.Get(context.TODO(), req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -76,6 +145,7 @@ func (r *AtReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return reconcile.Result{}, nil
 	}
 
+	// 因为是指针类型，因此可以进行相关的字段填充
 	if instance.Status.Phase == "" {
 		instance.Status.Phase = cnatv1alpha1.PhasePending
 	}
@@ -109,6 +179,13 @@ func (r *AtReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		pod := newPodForCR(instance)
 
 		// 将pod资源归到at实例名下
+		// Package controllerutil contains utility functions for working with and implementing Controllers.
+
+		// SetControllerReference sets owner as a Controller OwnerReference on controlled.
+		// This is used for garbage collection of the controlled object and for
+		// reconciling the owner object on changes to controlled (with a Watch + EnqueueRequestForOwner).
+		// Since only one OwnerReference can be a controller, it returns an error if
+		// there is another OwnerReference with Controller flag set.
 		if err := controllerutil.SetControllerReference(instance, pod, r.Scheme); err != nil {
 			return reconcile.Result{}, nil
 		}
@@ -191,12 +268,40 @@ func timeUntilSchedule(schedule string) (time.Duration, error) {
 	return s.Sub(now), nil
 }
 
-//
+// 向manager注册
+// 传入实例化后的mgr
 func (r *AtReconciler) SetupWithManager(mgr ctrl.Manager) error {
+
+	// NewControllerManagedBy 方法接收mgr参数 返回一个 Builder
+	// 构造器提供创建controller的接口
+
+	// 下面通过一些 builder 的方法来进行controller的配置 //
+
+	// builder provides wraps other controller-runtime libraries and exposes simple
+	// patterns for building common Controllers.
+
+	// ControllerManagedBy returns a new controller builder that will be started by the provided Manager
 	return ctrl.NewControllerManagedBy(mgr).
+
+		//
+		//
+		// For defines
+		//1 the type of Object being *reconciled*,
+		//2 configures the ControllerManagedBy to respond to create / delete / update events by *reconciling the object*.
+		// 参数接收一个资源对象结构体 返回 *builder
+		// 控制器调协的对象是哪个
 		For(&cnatv1alpha1.At{}).
+
+		// Owns defines
+		//1 types of Objects being *generated* by the ControllerManagedBy,
+		//2 configures the ControllerManagedBy to respond to create / delete / update events by *reconciling the owner object*.
+		// 控制器管理的对象是哪个 接收事件的对象是哪个
 		Owns(&cnatv1alpha1.At{}).
-		// 控制器看到pod的事件
+		// pod也被该控制器管理以及接收事件
+		// 控制器管理的对象是哪个 接收事件的对象是哪个
 		Owns(&corev1.Pod{}).
+
+		// Complete builds the Application ControllerManagedBy.
+		// 将 Reconcilers 注册到controller里面
 		Complete(r)
 }
